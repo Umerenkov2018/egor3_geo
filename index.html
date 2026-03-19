@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ГеоМастер — География 5 класс</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<style>
+:root {
+  --bg: #0A0A08;
+  --card: #111110;
+  --card2: #161614;
+  --gold: #C9A84C;
+  --gold-l: #E8C96A;
+  --gold-d: #7A5A1A;
+  --green: #4CAF7A;
+  --yellow: #E8B84B;
+  --red: #E05555;
+  --blue: #4a9aba;
+  --text: #E8E6DF;
+  --text-dim: #6A6860;
+  --border: #232321;
+  --border2: #2e2e2b;
+  --radius: 10px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+/* ─── LAYOUT ─────────────────────────────────── */
+#app { display: grid; grid-template-rows: 54px 1fr 110px; height: 100vh; }
+
+/* ─── HEADER ─────────────────────────────────── */
+#header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1000;
+}
+.logo { font-size: 17px; font-weight: 800; color: var(--gold); letter-spacing: .5px; white-space: nowrap; }
+.logo small { color: var(--text-dim); font-weight: 400; font-size: 11px; margin-left: 4px; }
+
+.level-pill {
+  background: linear-gradient(135deg, #3a2800, #5a4010);
+  border: 1px solid var(--gold-d);
+  color: var(--gold-l);
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.level-pill:hover { border-color: var(--gold); }
+
+.xp-wrap { flex: 1; min-width: 60px; max-width: 200px; }
+.xp-meta { font-size: 10px; color: var(--text-dim); display: flex; justify-content: space-between; margin-bottom: 3px; }
+.xp-track { height: 6px; background: var(--border2); border-radius: 3px; overflow: hidden; }
+.xp-bar { height: 100%; background: linear-gradient(90deg, var(--gold-d), var(--gold), var(--gold-l)); border-radius: 3px; transition: width .5s cubic-bezier(.4,0,.2,1); }
+
+.streak-pill {
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all .2s;
+}
+.streak-pill.s3 { border-color: var(--yellow); color: var(--yellow); }
+.streak-pill.s5 { border-color: var(--red); color: var(--red); animation: pulse .8s infinite; }
+
+.sep { width: 1px; height: 28px; background: var(--border2); flex-shrink: 0; }
+
+.mode-row { display: flex; gap: 3px; }
+.mbtn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  border-radius: 7px;
+  padding: 4px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.mbtn:hover:not(.on) { color: var(--text); border-color: var(--text-dim); }
+.mbtn.on { background: var(--gold); border-color: var(--gold); color: #000; font-weight: 700; }
+
+.drow { display: flex; gap: 3px; }
+.dbtn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.dbtn[data-d=easy].on  { background: var(--green); border-color: var(--green); color: #000; font-weight: 700; }
+.dbtn[data-d=medium].on { background: var(--yellow); border-color: var(--yellow); color: #000; font-weight: 700; }
+.dbtn[data-d=hard].on  { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; }
+
+.rbtn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.rbtn:hover { border-color: var(--red); color: var(--red); }
+
+/* ─── MAP ────────────────────────────────────── */
+#map-container { position: relative; }
+#map { height: 100%; width: 100%; background: #060808; }
+
+/* Floating question on map */
+#mq {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  background: rgba(8,8,6,.94);
+  border: 1px solid var(--gold-d);
+  border-radius: 12px;
+  padding: 10px 22px;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+  max-width: 420px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.6);
+}
+#mq-label { font-size: 11px; color: var(--text-dim); letter-spacing: .5px; text-transform: uppercase; }
+#mq-target { font-size: 22px; font-weight: 800; color: var(--gold-l); line-height: 1.2; margin: 2px 0; }
+#mq-hint { font-size: 11px; color: var(--text-dim); }
+
+/* ─── BOTTOM PANEL ───────────────────────────── */
+#bottom {
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 10px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+#bottom-row1 { display: flex; align-items: center; gap: 12px; }
+#flag-img { width: 58px; height: 39px; border-radius: 5px; border: 1px solid var(--border2); object-fit: cover; flex-shrink: 0; display: none; }
+#q-text { font-size: 15px; font-weight: 600; }
+#q-sub { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+#stats { display: flex; gap: 14px; margin-left: auto; flex-shrink: 0; }
+.stat { text-align: center; }
+.stat-v { font-size: 16px; font-weight: 700; color: var(--gold); }
+.stat-l { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+
+#choices { display: flex; gap: 6px; flex-wrap: wrap; }
+.cbtn {
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.cbtn:hover:not(.cor):not(.wrg) { border-color: var(--gold); color: var(--gold); }
+.cbtn.cor { background: rgba(76,175,122,.15); border-color: var(--green); color: var(--green); }
+.cbtn.wrg { background: rgba(224,85,85,.15); border-color: var(--red); color: var(--red); }
+
+/* ─── FEEDBACK TOAST ─────────────────────────── */
+#fb {
+  position: fixed;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(.9);
+  background: var(--card);
+  border-radius: 16px;
+  padding: 18px 32px;
+  text-align: center;
+  z-index: 9999;
+  border: 2px solid var(--border2);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .25s, transform .25s;
+  box-shadow: 0 20px 60px rgba(0,0,0,.8);
+  min-width: 200px;
+}
+#fb.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+#fb.cor { border-color: var(--green); }
+#fb.wrg { border-color: var(--red); }
+#fb-icon { font-size: 44px; line-height: 1; }
+#fb-msg { font-size: 20px; font-weight: 800; margin: 6px 0 2px; }
+#fb-xp { font-size: 13px; color: var(--gold); }
+#fb-info { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+/* ─── ACHIEVEMENT TOASTS ─────────────────────── */
+#ach-box {
+  position: fixed;
+  top: 70px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.ach-toast {
+  background: var(--card);
+  border: 1px solid var(--gold-d);
+  border-radius: 10px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 20px rgba(201,168,76,.2);
+  animation: slide-in .35s ease;
+  transition: opacity .4s;
+}
+.ach-ico { font-size: 22px; }
+.ach-title { font-weight: 700; color: var(--gold); font-size: 13px; }
+.ach-desc { font-size: 11px; color: var(--text-dim); }
+
+/* ─── LEVEL-UP OVERLAY ───────────────────────── */
+#lv-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 99999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#lv-card {
+  background: var(--card);
+  border: 2px solid var(--gold);
+  border-radius: 20px;
+  padding: 40px 50px;
+  text-align: center;
+  animation: pop .45s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 0 80px rgba(201,168,76,.25);
+}
+#lv-card .lv-num { font-size: 80px; color: var(--gold); line-height: 1; }
+#lv-card h2 { font-size: 26px; margin: 8px 0; }
+#lv-card p { color: var(--text-dim); font-size: 14px; }
+#lv-btn {
+  margin-top: 22px;
+  background: linear-gradient(135deg, var(--gold-d), var(--gold));
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 36px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: .3px;
+}
+#lv-btn:hover { filter: brightness(1.1); }
+
+/* ─── STATS OVERLAY ──────────────────────────── */
+#stats-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 99998;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#stats-card {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 28px 32px;
+  width: 400px;
+  max-width: 95vw;
+  animation: pop .35s ease;
+}
+#stats-card h2 { font-size: 18px; font-weight: 700; color: var(--gold); margin-bottom: 16px; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.stats-item { background: var(--card2); border-radius: 8px; padding: 10px; text-align: center; }
+.stats-val { font-size: 22px; font-weight: 800; color: var(--gold-l); }
+.stats-lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-top: 2px; }
+.ach-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.ach-badge { background: var(--card2); border: 1px solid var(--border2); border-radius: 7px; padding: 5px 10px; font-size: 12px; display: flex; align-items: center; gap: 5px; }
+.ach-badge.earned { border-color: var(--gold-d); color: var(--gold); }
+#stats-close {
+  width: 100%;
+  margin-top: 16px;
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+#stats-close:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ─── OCEAN MARKERS ──────────────────────────── */
+.wlabel {
+  background: transparent;
+  border: none;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 0 6px #000, 0 0 10px #000;
+  letter-spacing: .3px;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.wlabel.ocean { font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #5aade0; }
+.wlabel-inner {
+  padding: 3px 8px;
+  border: 1px solid rgba(74,154,186,0);
+  border-radius: 6px;
+  background: rgba(0,0,0,0);
+  transition: all .2s;
+}
+.wlabel-inner:hover,
+.wlabel-inner.target { border-color: rgba(74,154,186,.6); background: rgba(0,80,130,.3); }
+
+/* ─── LEAFLET TOOLTIP ────────────────────────── */
+.leaflet-tooltip.geo-tip {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,.6);
+}
+.leaflet-tooltip.geo-tip::before { display: none; }
+
+/* ─── ANIMATIONS ─────────────────────────────── */
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+@keyframes slide-in { from { transform: translateX(80px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes float-up { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-40px); opacity: 0; } }
+
+/* ─── SCROLLBAR ──────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.leaflet-control-attribution { font-size: 9px; opacity: .4; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo">🌍 ГеоМастер<small>5 класс</small></div>
+    <div class="level-pill" id="lv-pill" onclick="openStats()">Ур. 1</div>
+    <div class="xp-wrap">
+      <div class="xp-meta">
+        <span id="rank-lbl">🌱 Новичок</span>
+        <span id="xp-lbl">0 / 100 XP</span>
+      </div>
+      <div class="xp-track"><div class="xp-bar" id="xp-bar" style="width:0%"></div></div>
+    </div>
+    <div class="streak-pill" id="streak">🔥 0</div>
+    <div class="sep"></div>
+    <div class="mode-row">
+      <button class="mbtn on" data-m="country" onclick="setMode('country')">🗺 Страны</button>
+      <button class="mbtn" data-m="flag" onclick="setMode('flag')">🏳 Флаги</button>
+      <button class="mbtn" data-m="capital" onclick="setMode('capital')">🏙 Столицы</button>
+      <button class="mbtn" data-m="ocean" onclick="setMode('ocean')">🌊 Моря</button>
+    </div>
+    <div class="drow">
+      <button class="dbtn" data-d="easy" onclick="setDiff('easy')">Лёгко</button>
+      <button class="dbtn on" data-d="medium" onclick="setDiff('medium')">Средне</button>
+      <button class="dbtn" data-d="hard" onclick="setDiff('hard')">Сложно</button>
+    </div>
+    <button class="rbtn" onclick="confirmReset()">↺ Сброс</button>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-container">
+    <div id="map"></div>
+    <div id="mq">
+      <div id="mq-label">Найди на карте:</div>
+      <div id="mq-target">Загрузка...</div>
+      <div id="mq-hint"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM -->
+  <div id="bottom">
+    <div id="bottom-row1">
+      <img id="flag-img" src="" alt="">
+      <div>
+        <div id="q-text">Загрузка карты...</div>
+        <div id="q-sub"></div>
+      </div>
+      <div id="stats">
+        <div class="stat"><div class="stat-v" id="s-cor">0</div><div class="stat-l">Верно</div></div>
+        <div class="stat"><div class="stat-v" id="s-wrg">0</div><div class="stat-l">Ошибок</div></div>
+        <div class="stat"><div class="stat-v" id="s-acc">—</div><div class="stat-l">Точность</div></div>
+        <div class="stat"><div class="stat-v" id="s-str">0</div><div class="stat-l">Серия</div></div>
+      </div>
+    </div>
+    <div id="choices"></div>
+  </div>
+</div>
+
+<!-- FEEDBACK -->
+<div id="fb">
+  <div id="fb-icon">✓</div>
+  <div id="fb-msg"></div>
+  <div id="fb-xp"></div>
+  <div id="fb-info"></div>
+</div>
+
+<!-- ACHIEVEMENTS -->
+<div id="ach-box"></div>
+
+<!-- LEVEL UP -->
+<div id="lv-overlay">
+  <div id="lv-card">
+    <div class="lv-num" id="lu-n"></div>
+    <h2 id="lu-rank"></h2>
+    <p id="lu-desc"></p>
+    <button id="lv-btn" onclick="closeLevelUp()">Вперёд!</button>
+  </div>
+</div>
+
+<!-- STATS OVERLAY -->
+<div id="stats-overlay" onclick="closeStats(event)">
+  <div id="stats-card">
+    <h2>📊 Мой прогресс</h2>
+    <div class="stats-grid" id="sg"></div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">ДОСТИЖЕНИЯ</div>
+    <div class="ach-grid" id="ag"></div>
+    <button id="stats-close" onclick="closeStats()">Закрыть</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════
+
+// Rank thresholds
+const RANKS = [
+  {lv:1,  icon:"🌱", name:"Новичок",         desc:"Ты только начинаешь познавать мир!"},
+  {lv:6,  icon:"🔭", name:"Исследователь",   desc:"Горизонты знаний расширяются!"},
+  {lv:11, icon:"📍", name:"Географ",         desc:"Ты знаешь карту лучше многих!"},
+  {lv:16, icon:"🗺",  name:"Картограф",       desc:"Карты раскрывают тебе свои тайны!"},
+  {lv:21, icon:"✈️", name:"Путешественник",  desc:"Весь мир у тебя на ладони!"},
+  {lv:31, icon:"🧭", name:"Навигатор",       desc:"Ориентируешься на любой карте!"},
+  {lv:41, icon:"🌍", name:"Мастер географии",desc:"Легендарный знаток планеты Земля!"},
+];
+
+function getRank(lv) {
+  let r = RANKS[0];
+  for (const x of RANKS) if (lv >= x.lv) r = x; else break;
+  return r;
+}
+
+function xpForLevel(lv) {
+  return Math.floor(80 + lv * 40 + lv * lv * 5);
+}
+
+// Countries: [iso2, ruName, enName(GeoJSON match), continent, capitalRu, capLat, capLng, cLat, cLng, difficulty]
+// difficulty: 1=easy, 2=medium, 3=hard
+const COUNTRIES = [
+  // ЕВРОПА
+  ["ru","Россия","Russia","Европа","Москва",55.75,37.62,60,55,1],
+  ["fr","Франция","France","Европа","Париж",48.85,2.35,46,2,1],
+  ["de","Германия","Germany","Европа","Берлин",52.52,13.41,51,10,1],
+  ["gb","Великобритания","United Kingdom","Европа","Лондон",51.51,-0.13,54,-2,1],
+  ["it","Италия","Italy","Европа","Рим",41.9,12.5,42,12,1],
+  ["es","Испания","Spain","Европа","Мадрид",40.42,-3.7,40,-4,1],
+  ["pt","Португалия","Portugal","Европа","Лиссабон",38.72,-9.14,39,-8,2],
+  ["pl","Польша","Poland","Европа","Варшава",52.23,21.01,52,20,2],
+  ["ua","Украина","Ukraine","Европа","Киев",50.45,30.52,49,31,2],
+  ["se","Швеция","Sweden","Европа","Стокгольм",59.33,18.07,62,15,2],
+  ["no","Норвегия","Norway","Европа","Осло",59.91,10.75,65,14,2],
+  ["fi","Финляндия","Finland","Европа","Хельсинки",60.17,24.94,64,25,2],
+  ["gr","Греция","Greece","Европа","Афины",37.97,23.73,39,22,2],
+  ["ro","Румыния","Romania","Европа","Бухарест",44.43,26.1,46,25,3],
+  ["hu","Венгрия","Hungary","Европа","Будапешт",47.5,19.04,47,19,3],
+  ["cz","Чехия","Czech Republic","Европа","Прага",50.08,14.43,50,15,3],
+  ["at","Австрия","Austria","Европа","Вена",48.21,16.37,47,13,3],
+  ["ch","Швейцария","Switzerland","Европа","Берн",46.95,7.44,47,8,3],
+  ["nl","Нидерланды","Netherlands","Европа","Амстердам",52.37,4.9,52,5,2],
+  ["be","Бельгия","Belgium","Европа","Брюссель",50.85,4.35,50.5,4,3],
+  ["dk","Дания","Denmark","Европа","Копенгаген",55.68,12.57,56,10,3],
+  // АЗИЯ
+  ["tr","Турция","Turkey","Азия","Анкара",39.93,32.86,39,35,1],
+  ["cn","Китай","China","Азия","Пекин",39.9,116.4,35,105,1],
+  ["jp","Япония","Japan","Азия","Токио",35.69,139.69,36,138,1],
+  ["in","Индия","India","Азия","Нью-Дели",28.61,77.21,20,77,1],
+  ["sa","Саудовская Аравия","Saudi Arabia","Азия","Эр-Рияд",24.69,46.72,24,45,2],
+  ["ir","Иран","Iran","Азия","Тегеран",35.7,51.42,32,53,2],
+  ["iq","Ирак","Iraq","Азия","Багдад",33.34,44.4,33,44,2],
+  ["kz","Казахстан","Kazakhstan","Азия","Астана",51.18,71.45,48,68,2],
+  ["mn","Монголия","Mongolia","Азия","Улан-Батор",47.9,106.91,46,105,2],
+  ["pk","Пакистан","Pakistan","Азия","Исламабад",33.72,73.04,30,70,2],
+  ["af","Афганистан","Afghanistan","Азия","Кабул",34.52,69.18,33,65,3],
+  ["id","Индонезия","Indonesia","Азия","Джакарта",-6.21,106.85,-5,120,2],
+  ["vn","Вьетнам","Vietnam","Азия","Ханой",21.03,105.84,16,108,3],
+  ["th","Таиланд","Thailand","Азия","Бангкок",13.75,100.52,15,101,3],
+  ["kr","Южная Корея","South Korea","Азия","Сеул",37.57,126.98,36,127,2],
+  ["kp","Северная Корея","North Korea","Азия","Пхеньян",39.02,125.75,40,127,3],
+  ["il","Израиль","Israel","Азия","Иерусалим",31.77,35.22,31,35,3],
+  ["sy","Сирия","Syria","Азия","Дамаск",33.51,36.29,35,38,3],
+  ["uz","Узбекистан","Uzbekistan","Азия","Ташкент",41.3,69.27,41,63,3],
+  // АФРИКА
+  ["eg","Египет","Egypt","Африка","Каир",30.06,31.25,26,30,1],
+  ["za","ЮАР","South Africa","Африка","Претория",-25.74,28.19,-29,25,2],
+  ["ng","Нигерия","Nigeria","Африка","Абуджа",9.07,7.4,8,8,2],
+  ["ke","Кения","Kenya","Африка","Найроби",-1.29,36.82,1,38,2],
+  ["et","Эфиопия","Ethiopia","Африка","Аддис-Абеба",9.02,38.75,9,40,2],
+  ["cd","ДР Конго","Democratic Republic of the Congo","Африка","Киншаса",-4.32,15.32,-3,24,2],
+  ["ma","Марокко","Morocco","Африка","Рабат",34.01,-6.85,32,-5,2],
+  ["dz","Алжир","Algeria","Африка","Алжир",36.73,3.09,28,3,2],
+  ["sd","Судан","Sudan","Африка","Хартум",15.55,32.53,15,30,3],
+  ["tz","Танзания","Tanzania","Африка","Додома",-6.17,35.74,-6,35,3],
+  ["gh","Гана","Ghana","Африка","Аккра",5.56,-0.2,8,-2,3],
+  ["ao","Ангола","Angola","Африка","Луанда",-8.84,13.23,-12,18,3],
+  ["mg","Мадагаскар","Madagascar","Африка","Антананариву",-18.91,47.54,-20,47,3],
+  ["ly","Ливия","Libya","Африка","Триполи",32.9,13.19,27,17,3],
+  // АМЕРИКА
+  ["us","США","United States of America","Северная Америка","Вашингтон",38.9,-77.04,38,-97,1],
+  ["ca","Канада","Canada","Северная Америка","Оттава",45.42,-75.69,60,-95,1],
+  ["mx","Мексика","Mexico","Северная Америка","Мехико",19.43,-99.13,23,-102,2],
+  ["br","Бразилия","Brazil","Южная Америка","Бразилиа",-15.78,-47.93,-10,-55,1],
+  ["ar","Аргентина","Argentina","Южная Америка","Буэнос-Айрес",-34.6,-58.38,-34,-64,1],
+  ["co","Колумбия","Colombia","Южная Америка","Богота",4.71,-74.07,4,-72,2],
+  ["pe","Перу","Peru","Южная Америка","Лима",-12.05,-77.05,-10,-76,2],
+  ["cl","Чили","Chile","Южная Америка","Сантьяго",-33.45,-70.67,-30,-71,2],
+  ["ve","Венесуэла","Venezuela","Южная Америка","Каракас",10.48,-66.88,8,-66,3],
+  ["bo","Боливия","Bolivia","Южная Америка","Сукре",-19.03,-65.26,-17,-65,3],
+  ["cu","Куба","Cuba","Северная Америка","Гавана",23.13,-82.36,22,-79,3],
+  // АВСТРАЛИЯ
+  ["au","Австралия","Australia","Австралия","Канберра",-35.28,149.13,-25,133,1],
+  ["nz","Новая Зеландия","New Zealand","Австралия","Веллингтон",-41.29,174.78,-42,172,2],
+  ["pg","Папуа — Новая Гвинея","Papua New Guinea","Австралия","Порт-Морсби",-9.44,147.18,-6,147,3],
+];
+
+// Seas & Oceans
+const WATER = [
+  {id:"pacific",  ru:"Тихий океан",             type:"ocean", lat: 0,   lng:-160, iz:2},
+  {id:"atlantic", ru:"Атлантический океан",      type:"ocean", lat: 5,   lng: -30, iz:2},
+  {id:"indian",   ru:"Индийский океан",          type:"ocean", lat:-20,  lng:  80, iz:2},
+  {id:"arctic",   ru:"Северный Ледовитый океан", type:"ocean", lat: 83,  lng:  30, iz:2},
+  {id:"southern", ru:"Южный океан",              type:"ocean", lat:-67,  lng:  30, iz:2},
+  {id:"medit",    ru:"Средиземное море",         type:"sea",   lat: 35,  lng:  18, iz:4},
+  {id:"black",    ru:"Чёрное море",              type:"sea",   lat: 43,  lng:  33, iz:5},
+  {id:"red",      ru:"Красное море",             type:"sea",   lat: 20,  lng:  38, iz:5},
+  {id:"caspian",  ru:"Каспийское море",          type:"sea",   lat: 42,  lng:  51, iz:5},
+  {id:"arabian",  ru:"Аравийское море",          type:"sea",   lat: 15,  lng:  64, iz:4},
+  {id:"caribbean",ru:"Карибское море",           type:"sea",   lat: 15,  lng: -75, iz:4},
+  {id:"bering",   ru:"Берингово море",           type:"sea",   lat: 59,  lng:-176, iz:4},
+  {id:"japan",    ru:"Японское море",            type:"sea",   lat: 40,  lng: 134, iz:5},
+  {id:"north",    ru:"Северное море",            type:"sea",   lat: 56,  lng:   3, iz:5},
+  {id:"baltic",   ru:"Балтийское море",          type:"sea",   lat: 58,  lng:  20, iz:5},
+  {id:"barents",  ru:"Баренцево море",           type:"sea",   lat: 72,  lng:  40, iz:4},
+  {id:"coral",    ru:"Коралловое море",          type:"sea",   lat:-18,  lng: 152, iz:4},
+  {id:"s_china",  ru:"Южно-Китайское море",      type:"sea",   lat: 14,  lng: 114, iz:4},
+  {id:"persian",  ru:"Персидский залив",         type:"sea",   lat: 27,  lng:  51, iz:5},
+  {id:"bengal",   ru:"Бенгальский залив",        type:"sea",   lat: 15,  lng:  88, iz:4},
+];
+
+// ISO numeric → English name (world-atlas dataset)
+const ISO_NUM = {
+  "004":"Afghanistan","008":"Albania","012":"Algeria","024":"Angola","032":"Argentina",
+  "036":"Australia","040":"Austria","050":"Bangladesh","056":"Belgium","068":"Bolivia",
+  "076":"Brazil","100":"Bulgaria","116":"Cambodia","120":"Cameroon","124":"Canada",
+  "152":"Chile","156":"China","170":"Colombia","180":"Democratic Republic of the Congo",
+  "188":"Costa Rica","192":"Cuba","208":"Denmark","818":"Egypt","231":"Ethiopia",
+  "246":"Finland","250":"France","276":"Germany","288":"Ghana","300":"Greece",
+  "320":"Guatemala","332":"Haiti","340":"Honduras","356":"India","360":"Indonesia",
+  "364":"Iran","368":"Iraq","372":"Ireland","376":"Israel","380":"Italy",
+  "388":"Jamaica","392":"Japan","398":"Kazakhstan","404":"Kenya","408":"North Korea",
+  "410":"South Korea","414":"Kuwait","418":"Laos","422":"Lebanon","434":"Libya",
+  "484":"Mexico","496":"Mongolia","504":"Morocco","508":"Mozambique","516":"Namibia",
+  "524":"Nepal","528":"Netherlands","554":"New Zealand","566":"Nigeria","578":"Norway",
+  "586":"Pakistan","604":"Peru","608":"Philippines","616":"Poland","620":"Portugal",
+  "634":"Qatar","642":"Romania","643":"Russia","682":"Saudi Arabia","706":"Somalia",
+  "710":"South Africa","724":"Spain","729":"Sudan","752":"Sweden","756":"Switzerland",
+  "760":"Syria","764":"Thailand","792":"Turkey","800":"Uganda","804":"Ukraine",
+  "784":"United Arab Emirates","826":"United Kingdom","840":"United States of America",
+  "858":"Uruguay","860":"Uzbekistan","862":"Venezuela","704":"Vietnam","887":"Yemen",
+  "894":"Zambia","716":"Zimbabwe","450":"Madagascar","466":"Mali","478":"Mauritania",
+  "050":"Bangladesh","400":"Jordan","144":"Sri Lanka","498":"Moldova","051":"Armenia",
+  "031":"Azerbaijan","112":"Belarus","591":"Panama","804":"Ukraine","064":"Bhutan",
+  "428":"Latvia","440":"Lithuania","233":"Estonia","703":"Slovakia","705":"Slovenia",
+  "191":"Croatia","070":"Bosnia and Herzegovina","807":"Macedonia","499":"Montenegro",
+  "688":"Serbia","008":"Albania","300":"Greece","196":"Cyprus","470":"Malta",
+  "591":"Panama","320":"Guatemala","218":"Ecuador","600":"Paraguay","858":"Uruguay",
+  "214":"Dominican Republic","388":"Jamaica","044":"Bahamas","028":"Antigua and Barbuda",
+  "670":"Saint Vincent and the Grenadines","659":"Saint Kitts and Nevis","662":"Saint Lucia",
+  "052":"Barbados","084":"Belize","558":"Nicaragua","222":"El Salvador","320":"Guatemala",
+  "340":"Honduras","188":"Costa Rica","591":"Panama","818":"Egypt","694":"Sierra Leone",
+  "072":"Botswana","748":"Swaziland","426":"Lesotho","454":"Malawi","894":"Zambia",
+  "716":"Zimbabwe","834":"Tanzania","646":"Rwanda","108":"Burundi","404":"Kenya",
+  "800":"Uganda","706":"Somalia","262":"Djibouti","232":"Eritrea","231":"Ethiopia",
+  "729":"Sudan","140":"Central African Republic","148":"Chad","562":"Niger",
+  "466":"Mali","288":"Ghana","384":"Ivory Coast","430":"Liberia","694":"Sierra Leone",
+  "324":"Guinea","624":"Guinea-Bissau","686":"Senegal","270":"Gambia","478":"Mauritania",
+  "204":"Benin","768":"Togo","566":"Nigeria","120":"Cameroon","276":"Gabon",
+  "178":"Congo","180":"Democratic Republic of the Congo","226":"Equatorial Guinea",
+  "678":"Sao Tome and Principe","024":"Angola","516":"Namibia","072":"Botswana",
+  "710":"South Africa","748":"Eswatini","426":"Lesotho","508":"Mozambique",
+  "450":"Madagascar","480":"Mauritius","174":"Comoros","690":"Seychelles",
+  "012":"Algeria","788":"Tunisia","504":"Morocco","434":"Libya","818":"Egypt",
+  "729":"Sudan","148":"Chad","562":"Niger","466":"Mali","478":"Mauritania",
+  "732":"Western Sahara","356":"India","050":"Bangladesh","144":"Sri Lanka",
+  "524":"Nepal","064":"Bhutan","462":"Maldives","598":"Papua New Guinea",
+  "090":"Solomon Islands","242":"Fiji","548":"Vanuatu","540":"New Caledonia",
+  "882":"Samoa","776":"Tonga","798":"Tuvalu","584":"Marshall Islands",
+  "583":"Micronesia","585":"Palau","036":"Australia","554":"New Zealand",
+};
+
+// Build lookup from English name → country data
+const BY_EN = {};
+COUNTRIES.forEach(c => {
+  BY_EN[c[2]] = {
+    iso2: c[0], ru: c[1], en: c[2], continent: c[3],
+    capRu: c[4], capLat: c[5], capLng: c[6],
+    lat: c[7], lng: c[8], diff: c[9]
+  };
+});
+
+// ═══════════════════════════════════════════════
+// ACHIEVEMENTS
+// ═══════════════════════════════════════════════
+
+const ACHS = [
+  {id:"first",    ico:"🎯", title:"Первый шаг",     desc:"Первый правильный ответ",      check:s=>s.cor>=1},
+  {id:"s3",       ico:"🔥", title:"Серия x3",        desc:"3 правильных подряд",          check:s=>s.maxStr>=3},
+  {id:"s5",       ico:"🌋", title:"Огонь!",          desc:"5 правильных подряд",          check:s=>s.maxStr>=5},
+  {id:"s10",      ico:"⚡", title:"Молния",           desc:"10 правильных подряд",         check:s=>s.maxStr>=10},
+  {id:"c10",      ico:"🏅", title:"10 побед",         desc:"10 правильных ответов",        check:s=>s.cor>=10},
+  {id:"c50",      ico:"🥈", title:"50 побед",         desc:"50 правильных ответов",        check:s=>s.cor>=50},
+  {id:"c100",     ico:"🥇", title:"100 побед",        desc:"100 правильных ответов",       check:s=>s.cor>=100},
+  {id:"c250",     ico:"💎", title:"250 побед",        desc:"250 правильных ответов",       check:s=>s.cor>=250},
+  {id:"lv6",      ico:"🔭", title:"Исследователь",   desc:"Достиг 6 уровня",              check:s=>s.lv>=6},
+  {id:"lv11",     ico:"📍", title:"Географ",         desc:"Достиг 11 уровня",             check:s=>s.lv>=11},
+  {id:"lv21",     ico:"🗺",  title:"Картограф",       desc:"Достиг 21 уровня",             check:s=>s.lv>=21},
+  {id:"lv31",     ico:"🧭", title:"Навигатор",       desc:"Достиг 31 уровня",             check:s=>s.lv>=31},
+  {id:"hard1",    ico:"💪", title:"Храбрец",          desc:"Первый ответ на сложном",      check:s=>s.hardCor>=1},
+  {id:"hard20",   ico:"🦾", title:"Мастер хардкора", desc:"20 ответов на сложном",        check:s=>s.hardCor>=20},
+  {id:"all4",     ico:"🌟", title:"Всесторонний",    desc:"Ответил в каждом из 4 режимов",check:s=>s.modesUsed>=4},
+  {id:"acc90",    ico:"🎖",  title:"Снайпер",         desc:"Точность 90%+ (мин 20 ответов)",check:s=>s.cor+s.wrg>=20&&s.cor/(s.cor+s.wrg)>=.9},
+];
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+
+const DEF = {
+  xp:0, lv:1, cor:0, wrg:0, str:0, maxStr:0,
+  mode:"country", diff:"medium",
+  achs:[], hardCor:0, modesSet:new Set(), modesUsed:0,
+};
+
+let S = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem("gm5_v2"));
+    if (raw) {
+      raw.modesSet = new Set(raw.modesArr || []);
+      return Object.assign({}, DEF, raw);
+    }
+  } catch {}
+  return Object.assign({}, DEF, {modesSet: new Set()});
+})();
+
+let saveT = null;
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    const out = Object.assign({}, S, {modesArr: [...S.modesSet]});
+    delete out.modesSet;
+    localStorage.setItem("gm5_v2", JSON.stringify(out));
+  }, 600);
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
+window.addEventListener("pagehide", () => save());
+
+// ═══════════════════════════════════════════════
+// MAP INIT
+// ═══════════════════════════════════════════════
+
+const map = L.map("map", {
+  center: [20, 10], zoom: 2,
+  minZoom: 1, maxZoom: 8,
+  zoomControl: false,
+  attributionControl: true,
+  preferCanvas: true,
+});
+
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
+  subdomains: "abcd",
+  maxZoom: 19,
+  attribution: "© CartoDB © OSM",
+}).addTo(map);
+
+L.control.zoom({ position: "bottomright" }).addTo(map);
+
+// ═══════════════════════════════════════════════
+// GEOJSON LAYER
+// ═══════════════════════════════════════════════
+
+let geoLayer = null;
+let geoLoaded = false;
+let currentQ = null;
+let locked = false;
+let wMarkers = [];
+
+async function loadMap() {
+  try {
+    const res = await fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json");
+    const topo = await res.json();
+    const geo = topojson.feature(topo, topo.objects.countries);
+
+    geoLayer = L.geoJSON(geo, {
+      style: countryStyle,
+      onEachFeature: bindCountry,
+    }).addTo(map);
+
+    geoLoaded = true;
+    startGame();
+  } catch (e) {
+    console.error(e);
+    document.getElementById("mq-target").textContent = "Ошибка загрузки";
+    document.getElementById("q-text").textContent = "Нет соединения с интернетом. Попробуйте перезагрузить страницу.";
+  }
+}
+
+function countryStyle() {
+  return {
+    fillColor: "#1a2818",
+    fillOpacity: 0.75,
+    color: "#2d3d2d",
+    weight: 0.7,
+    opacity: 0.9,
+  };
+}
+
+function bindCountry(feature, layer) {
+  const numId = String(feature.id).padStart(3, "0");
+  const en = ISO_NUM[numId];
+  if (en) {
+    layer._en = en;
+    layer._cd = BY_EN[en] || null;
+  }
+
+  layer.on({
+    mouseover(e) { onHover(e, layer); },
+    mouseout(e)  { onOut(e, layer); },
+    click(e)     { onClick(e, layer); },
+  });
+}
+
+function onHover(e, layer) {
+  if (S.mode === "ocean") return;
+  if (!layer._lit) {
+    layer.setStyle({ fillColor:"#7a6030", fillOpacity:.55, color:"#b09040", weight:1 });
+  }
+  const cd = layer._cd;
+  if (cd) {
+    const tip = `<b>${cd.ru}</b><br><small style="color:var(--text-dim)">${cd.continent}</small>`;
+    layer.bindTooltip(tip, { className:"geo-tip", sticky:true }).openTooltip(e.latlng);
+  }
+}
+
+function onOut(e, layer) {
+  layer.closeTooltip();
+  if (!layer._lit) resetStyle(layer);
+}
+
+function resetStyle(layer) {
+  geoLayer && geoLayer.resetStyle(layer);
+}
+
+function onClick(e, layer) {
+  if (locked || !currentQ || S.mode === "ocean") return;
+  answerCountry(layer._en, layer);
+}
+
+// ═══════════════════════════════════════════════
+// WATER MARKERS
+// ═══════════════════════════════════════════════
+
+function clearWater() {
+  wMarkers.forEach(m => map.removeLayer(m));
+  wMarkers = [];
+}
+
+function spawnWater(targetId) {
+  clearWater();
+  getWaterPool().forEach(wb => {
+    const isTarget = wb.id === targetId;
+    const icon = L.divIcon({
+      className: `wlabel${wb.type === "ocean" ? " ocean" : ""}`,
+      html: `<div class="wlabel-inner${isTarget ? " target" : ""}" id="wl-${wb.id}">${wb.ru}</div>`,
+      iconSize: [200, 28],
+      iconAnchor: [100, 14],
+    });
+    const m = L.marker([wb.lat, wb.lng], { icon, zIndexOffset: 200 })
+      .on("click", () => {
+        if (locked) return;
+        answerWater(wb.id);
+      })
+      .addTo(map);
+    wMarkers.push(m);
+  });
+}
+
+// ═══════════════════════════════════════════════
+// POOLS (DIFFICULTY FILTER)
+// ═══════════════════════════════════════════════
+
+function getPool() {
+  const d = S.diff === "easy" ? 1 : S.diff === "medium" ? 2 : 3;
+  return COUNTRIES.filter(c => c[9] <= d);
+}
+
+function getWaterPool() {
+  const all = WATER;
+  if (S.diff === "easy") return all.filter(w => ["pacific","atlantic","indian","arctic","southern","medit","black","red","caspian"].includes(w.id));
+  if (S.diff === "medium") return all.filter(w => !["s_china","bengal","coral","persian"].includes(w.id));
+  return all;
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function pickWrong(correct, pool, n = 3) {
+  const others = pool.filter(c => c[1] !== correct.ru);
+  const result = [];
+  const used = new Set();
+  while (result.length < n && others.length > 0) {
+    const idx = Math.floor(Math.random() * others.length);
+    const c = others[idx];
+    if (!used.has(c[1])) {
+      used.add(c[1]);
+      result.push(BY_EN[c[2]] || { ru: c[1] });
+    }
+    others.splice(idx, 1);
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════════
+// GAME FLOW
+// ═══════════════════════════════════════════════
+
+function startGame() {
+  restoreUI();
+  updateXP();
+  updateStats();
+  nextQ();
+}
+
+function nextQ() {
+  locked = false;
+  clearChoices();
+  clearHighlights();
+
+  const mode = S.mode;
+  S.modesSet.add(mode);
+  S.modesUsed = S.modesSet.size;
+
+  if (mode === "ocean") {
+    const pool = getWaterPool();
+    const wb = pickRandom(pool);
+    currentQ = { type: "ocean", wb };
+
+    document.getElementById("mq-label").textContent = wb.type === "ocean" ? "Найди океан:" : "Найди море / залив:";
+    document.getElementById("mq-target").textContent = wb.ru;
+    document.getElementById("mq-hint").textContent = "Нажми на правильное название на карте";
+    document.getElementById("q-text").textContent = `Найди: ${wb.ru}`;
+    document.getElementById("q-sub").textContent = wb.type === "ocean" ? "Океан" : "Море или залив";
+    document.getElementById("flag-img").style.display = "none";
+
+    spawnWater(null); // show all labels
+    map.flyTo([wb.lat, wb.lng], Math.max(2, wb.iz - 1), { duration: 1 });
+    return;
+  }
+
+  clearWater();
+  const pool = getPool();
+  const pick = pickRandom(pool);
+  const cd = BY_EN[pick[2]];
+  currentQ = { type: mode, cd };
+
+  // Fly to region
+  const zoom = mode === "country" ? 3.5 : 4;
+  map.flyTo([cd.lat, cd.lng], zoom, { duration: 1 });
+
+  if (mode === "country") {
+    document.getElementById("mq-label").textContent = "Найди страну:";
+    document.getElementById("mq-target").textContent = cd.ru;
+    document.getElementById("mq-hint").textContent = cd.continent;
+    document.getElementById("q-text").textContent = `Кликни на страну: ${cd.ru}`;
+    document.getElementById("q-sub").textContent = cd.continent;
+    document.getElementById("flag-img").style.display = "none";
+
+  } else if (mode === "flag") {
+    document.getElementById("mq-label").textContent = "Определи страну по флагу:";
+    document.getElementById("mq-target").textContent = "?";
+    document.getElementById("mq-hint").textContent = "Нажми на страну или выбери ответ";
+    document.getElementById("q-text").textContent = "Найди страну с этим флагом";
+    document.getElementById("q-sub").textContent = cd.continent;
+
+    const fi = document.getElementById("flag-img");
+    fi.src = `https://flagcdn.com/w80/${cd.iso2}.png`;
+    fi.style.display = "block";
+
+    // Multiple choice buttons
+    const choices = [cd, ...pickWrong(cd, pool)].sort(() => Math.random() - .5);
+    renderChoices(choices, cd);
+
+  } else if (mode === "capital") {
+    document.getElementById("mq-label").textContent = "Столица этой страны:";
+    document.getElementById("mq-target").textContent = cd.capRu;
+    document.getElementById("mq-hint").textContent = `Найди страну на карте`;
+    document.getElementById("q-text").textContent = `Найди страну со столицей: ${cd.capRu}`;
+    document.getElementById("q-sub").textContent = cd.continent;
+    document.getElementById("flag-img").style.display = "none";
+  }
+}
+
+function renderChoices(choices, correct) {
+  const box = document.getElementById("choices");
+  choices.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "cbtn";
+    b.textContent = c.ru;
+    b.onclick = () => {
+      if (locked) return;
+      if (c.ru === correct.ru) {
+        b.classList.add("cor");
+        correctAnswer();
+      } else {
+        b.classList.add("wrg");
+        box.querySelectorAll(".cbtn").forEach(x => {
+          if (x.textContent === correct.ru) x.classList.add("cor");
+        });
+        wrongAnswer(correct);
+      }
+      locked = true;
+    };
+    box.appendChild(b);
+  });
+}
+
+function clearChoices() {
+  document.getElementById("choices").innerHTML = "";
+}
+
+function clearHighlights() {
+  if (!geoLayer) return;
+  geoLayer.eachLayer(l => {
+    l._lit = false;
+    resetStyle(l);
+  });
+}
+
+// ─── ANSWERS ──────────────────────────────────
+
+function answerCountry(en, layer) {
+  if (!currentQ || locked) return;
+  const target = currentQ.cd;
+  if (!target) return;
+
+  if (en === target.en) {
+    layer._lit = true;
+    layer.setStyle({ fillColor:"#4CAF7A", fillOpacity:.7, color:"#4CAF7A", weight:1.5 });
+    correctAnswer();
+  } else {
+    layer._lit = true;
+    layer.setStyle({ fillColor:"#E05555", fillOpacity:.5, color:"#E05555", weight:1.5 });
+    // Highlight correct
+    geoLayer.eachLayer(l => {
+      if (l._en === target.en) {
+        l._lit = true;
+        l.setStyle({ fillColor:"#4CAF7A", fillOpacity:.7, color:"#4CAF7A", weight:2 });
+      }
+    });
+    wrongAnswer(target);
+  }
+  locked = true;
+}
+
+function answerWater(id) {
+  if (!currentQ || locked) return;
+  locked = true;
+  const target = currentQ.wb;
+
+  if (id === target.id) {
+    correctAnswer();
+  } else {
+    wrongAnswer(target);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// SCORING
+// ═══════════════════════════════════════════════
+
+const XP_BASE = { easy:8, medium:15, hard:25 };
+const STREAK_MULT = [1,1,1,1.5,1.5,2,2,2,2.5,2.5,3];
+
+function correctAnswer() {
+  S.cor++;
+  S.str++;
+  if (S.str > S.maxStr) S.maxStr = S.str;
+  if (S.diff === "hard") S.hardCor++;
+
+  const base = XP_BASE[S.diff];
+  const mult = STREAK_MULT[Math.min(S.str, STREAK_MULT.length - 1)];
+  const earned = Math.round(base * mult);
+  const multStr = mult > 1 ? `  ×${mult} серия!` : "";
+
+  gainXP(earned);
+  updateStats();
+  showFB(true, "Правильно!", `+${earned} XP${multStr}`);
+  checkAchs();
+  save();
+
+  setTimeout(nextQ, 1700);
+}
+
+function wrongAnswer(target) {
+  S.str = 0;
+  S.wrg++;
+
+  updateStats();
+  const info = target ? `Правильно: ${target.ru || target.capRu}` : "";
+  showFB(false, "Неверно!", info);
+  checkAchs();
+  save();
+
+  setTimeout(nextQ, 2200);
+}
+
+function gainXP(n) {
+  S.xp += n;
+
+  // Float XP label on map
+  floatXP(`+${n}`);
+
+  let leveled = false;
+  while (S.xp >= xpForLevel(S.lv)) {
+    S.xp -= xpForLevel(S.lv);
+    S.lv++;
+    leveled = true;
+  }
+  if (leveled) setTimeout(showLevelUp, 400);
+  updateXP();
+}
+
+function floatXP(txt) {
+  const el = document.createElement("div");
+  el.textContent = txt;
+  el.style.cssText = `position:fixed;left:50%;top:55%;transform:translateX(-50%);
+    color:var(--gold-l);font-size:18px;font-weight:800;pointer-events:none;z-index:8000;
+    animation:float-up 1.2s ease forwards;text-shadow:0 0 10px rgba(201,168,76,.5)`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1200);
+}
+
+// ═══════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════
+
+function updateXP() {
+  const needed = xpForLevel(S.lv);
+  const pct = (S.xp / needed) * 100;
+  document.getElementById("xp-bar").style.width = pct + "%";
+  document.getElementById("xp-lbl").textContent = `${S.xp} / ${needed} XP`;
+  document.getElementById("lv-pill").textContent = `Ур. ${S.lv}`;
+  const r = getRank(S.lv);
+  document.getElementById("rank-lbl").textContent = `${r.icon} ${r.name}`;
+}
+
+function updateStats() {
+  document.getElementById("s-cor").textContent = S.cor;
+  document.getElementById("s-wrg").textContent = S.wrg;
+  const tot = S.cor + S.wrg;
+  document.getElementById("s-acc").textContent = tot > 0 ? Math.round(S.cor/tot*100) + "%" : "—";
+  document.getElementById("s-str").textContent = S.str;
+  const sp = document.getElementById("streak");
+  sp.textContent = `🔥 ${S.str}`;
+  sp.className = "streak-pill" + (S.str >= 5 ? " s5" : S.str >= 3 ? " s3" : "");
+}
+
+let fbTimer = null;
+function showFB(ok, msg, info) {
+  const el = document.getElementById("fb");
+  document.getElementById("fb-icon").textContent = ok ? "✓" : "✗";
+  document.getElementById("fb-msg").textContent = msg;
+  document.getElementById("fb-msg").style.color = ok ? "var(--green)" : "var(--red)";
+  document.getElementById("fb-xp").textContent = info;
+  document.getElementById("fb-info").textContent = "";
+  el.className = "show " + (ok ? "cor" : "wrg");
+  clearTimeout(fbTimer);
+  fbTimer = setTimeout(() => el.className = "", 1500);
+}
+
+function showLevelUp() {
+  const r = getRank(S.lv);
+  document.getElementById("lu-n").textContent = S.lv;
+  document.getElementById("lu-rank").textContent = `${r.icon} ${r.name}`;
+  document.getElementById("lu-desc").textContent = r.desc;
+  document.getElementById("lv-overlay").style.display = "flex";
+}
+
+function closeLevelUp() {
+  document.getElementById("lv-overlay").style.display = "none";
+}
+
+// ─── ACHIEVEMENTS ─────────────────────────────
+
+function checkAchs() {
+  ACHS.forEach(a => {
+    if (!S.achs.includes(a.id) && a.check(S)) {
+      S.achs.push(a.id);
+      toastAch(a);
+    }
+  });
+}
+
+function toastAch(a) {
+  const box = document.getElementById("ach-box");
+  const el = document.createElement("div");
+  el.className = "ach-toast";
+  el.innerHTML = `<div class="ach-ico">${a.ico}</div><div><div class="ach-title">🏆 ${a.title}</div><div class="ach-desc">${a.desc}</div></div>`;
+  box.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 400); }, 3500);
+}
+
+// ─── STATS OVERLAY ────────────────────────────
+
+function openStats() {
+  const tot = S.cor + S.wrg;
+  const acc = tot > 0 ? Math.round(S.cor/tot*100) + "%" : "—";
+  document.getElementById("sg").innerHTML = `
+    <div class="stats-item"><div class="stats-val">${S.lv}</div><div class="stats-lbl">Уровень</div></div>
+    <div class="stats-item"><div class="stats-val">${S.xp}</div><div class="stats-lbl">XP до следующего</div></div>
+    <div class="stats-item"><div class="stats-val">${S.cor}</div><div class="stats-lbl">Правильных</div></div>
+    <div class="stats-item"><div class="stats-val">${S.wrg}</div><div class="stats-lbl">Ошибок</div></div>
+    <div class="stats-item"><div class="stats-val">${acc}</div><div class="stats-lbl">Точность</div></div>
+    <div class="stats-item"><div class="stats-val">${S.maxStr}</div><div class="stats-lbl">Макс. серия</div></div>
+  `;
+  const ag = document.getElementById("ag");
+  ag.innerHTML = ACHS.map(a => {
+    const earned = S.achs.includes(a.id);
+    return `<div class="ach-badge${earned ? " earned" : ""}" title="${a.desc}">${a.ico} ${a.title}</div>`;
+  }).join("");
+  document.getElementById("stats-overlay").style.display = "flex";
+}
+
+function closeStats(e) {
+  if (!e || e.target === document.getElementById("stats-overlay")) {
+    document.getElementById("stats-overlay").style.display = "none";
+  }
+}
+
+// ─── CONTROLS ─────────────────────────────────
+
+function setMode(m) {
+  S.mode = m;
+  document.querySelectorAll(".mbtn").forEach(b => b.classList.toggle("on", b.dataset.m === m));
+  save();
+  if (geoLoaded) { clearWater(); nextQ(); }
+}
+
+function setDiff(d) {
+  S.diff = d;
+  document.querySelectorAll(".dbtn").forEach(b => b.classList.toggle("on", b.dataset.d === d));
+  save();
+  if (geoLoaded) nextQ();
+}
+
+function confirmReset() {
+  if (confirm("Сбросить весь прогресс? XP, уровень и статистика будут обнулены.")) {
+    const mode = S.mode, diff = S.diff;
+    S = Object.assign({}, DEF, { mode, diff, modesSet: new Set() });
+    save();
+    updateXP();
+    updateStats();
+    if (geoLoaded) nextQ();
+  }
+}
+
+function restoreUI() {
+  document.querySelectorAll(".mbtn").forEach(b => b.classList.toggle("on", b.dataset.m === S.mode));
+  document.querySelectorAll(".dbtn").forEach(b => b.classList.toggle("on", b.dataset.d === S.diff));
+}
+
+// ═══════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════
+loadMap();
+</script>
+</body>
+</html>
